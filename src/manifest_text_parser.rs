@@ -1,5 +1,4 @@
 use regex::Regex;
-use std::cmp::PartialEq;
 
 pub struct ManifestTextParser {}
 
@@ -11,24 +10,23 @@ impl ManifestTextParser {
         Self {}
     }
 
-    pub fn parse_playlist(&self, data: String, absolutePlaylistUri: String) {
+    pub fn parse_playlist(&self, data: String, absolute_playlist_uri: String) -> Playlist {
         // Normalize newlines to \n.
         let data_normalized = data.replace("/\r\n|\r(?=[^\n]|$)/gm", "\n");
-        let data_splitted = data_normalized.trim().split("/\n+/m");
-        let lines: Vec<&str> = data_splitted.collect();
+        let lines: Vec<&str> = data_normalized.trim().split("\n").collect();
 
         let reg_header = Regex::new("^#EXTM3U($|[ \t\n])").unwrap();
         if !reg_header.is_match(lines.first().unwrap()) {
             println!("HLS header manifest is empty");
         }
 
-        let mut playlistType = PlaylistType::Master;
+        let mut playlist_type = PlaylistType::Master;
 
-        // First, look for media playlist tags, so that we know what the playlist type really is before we start parsing.
+        // First, look for media playlist tags, so that we know what the playlist
+        // type really is before we start parsing.
         // Whether to skip the next element; initialize to true to skip first elem.
         let mut skip = true;
-        for line in lines.clone() {
-            println!("{:#}", line);
+        for line in &lines {
             // Ignore comments.
             if Self::is_comment(line) || skip {
                 skip = false;
@@ -38,7 +36,7 @@ impl ManifestTextParser {
             let tag = Self::parse_tag(line);
 
             if MEDIA_PLAYLIST_TAGS.iter().any(|t| t == &tag.name) {
-                playlistType = PlaylistType::Media;
+                playlist_type = PlaylistType::Media;
                 break;
             } else if tag.name == "EXT-X-STREAM-INF" {
                 skip = true;
@@ -46,6 +44,7 @@ impl ManifestTextParser {
         }
 
         let mut tags: Vec<Tag> = Vec::new();
+        // Initialize to "true" to skip the first element.
         skip = true;
         for (i, line) in lines.iter().enumerate() {
             // Ignore comments.
@@ -54,19 +53,41 @@ impl ManifestTextParser {
                 continue;
             }
 
-            let tag = Self::parse_tag(line);
+            let mut tag = Self::parse_tag(line);
+
             if MEDIA_PLAYLIST_TAGS.iter().any(|t| t == &tag.name) {
-                // match playlistType {
-                //     PlaylistType::Media => {
-                //         let segmentsData: Vec<&str> = lines[..i].into();
-                //         let segments =
-                //             Self::parse_segments(&absolutePlaylistUri, segmentsData, tags);
-                //         Playlist::new(absolutePlaylistUri.clone(), playlistType, tags, segments);
-                //     }
-                //     _ => println!("Only media playlists should contain segment tags"),
-                // }
+                // Only media playlists should contain segment tags
+                match playlist_type {
+                    PlaylistType::Media => {
+                        let segments_data: Vec<&str> = lines.clone()[i..].into();
+                        let segments = Self::parse_segments(
+                            absolute_playlist_uri.clone(),
+                            segments_data,
+                            tags.clone(),
+                        );
+                        Playlist::new(
+                            absolute_playlist_uri.clone(),
+                            playlist_type,
+                            tags.clone(),
+                            Some(segments),
+                        );
+                    }
+                    _ => panic!("Only media playlists should contain segment tags"),
+                }
             }
+
+            // An EXT-X-STREAM-INF tag is followed by a URI of a media playlist.
+            // Add the URI to the tag object.
+            if tag.name == "EXT-X-STREAM-INF" {
+                let tag_uri = Attribute::new("URI", lines.clone()[i + 1].into());
+                tag.add_attribute(tag_uri);
+                skip = true;
+            }
+
+            tags.push(tag);
         }
+
+        Playlist::new(absolute_playlist_uri, playlist_type, tags, None)
     }
 
     /**
@@ -91,21 +112,22 @@ impl ManifestTextParser {
         //   2a. The first item might be a value, if it does not contain '='.
         //   2b. Otherwise, items are attributes.
         // 3. If there is no ":", it's a simple tag with no attributes and no value.
-        let tag: &str = line[line.find("#").unwrap() + 1..].into();
-        let name: &str = tag[..tag.find(":").unwrap()].into();
-        let data: &str = tag[tag.find(":").unwrap() + 1..].into();
 
-        if data.len() > 0 {}
-        Tag::new(name.to_owned())
+        // let tag: &str = line[line.find("#").unwrap() + 1..].into();
+        // let name: &str = tag[..tag.find(":").unwrap()].into();
+        // let data: &str = tag[tag.find(":").unwrap() + 1..].into();
+
+        // if data.len() > 0 {}
+        Tag::new("name".to_owned())
     }
 
     /**
      * Parses an array of strings into an array of HLS Segment objects.
      */
     fn parse_segments(
-        absoluteMediaPlaylistUri: &String,
+        absolute_media_playlist_uri: String,
         lines: Vec<&str>,
-        playlistTags: Vec<Tag>,
+        playlist_tags: Vec<Tag>,
     ) -> Vec<Segment> {
         let mut segments: Vec<Segment> = Vec::new();
         segments.push(Segment::new());
@@ -116,20 +138,29 @@ impl ManifestTextParser {
 /**
  * HLS tag struct.
  */
-struct Tag {
+#[derive(Clone)]
+pub struct Tag {
     name: String,
+    attributes: Vec<Attribute>,
 }
 
 impl Tag {
     pub fn new(name: String) -> Self {
-        Self { name: name }
+        Self {
+            name: name,
+            attributes: Vec::new(),
+        }
+    }
+
+    pub fn add_attribute(&mut self, attribute: Attribute) {
+        self.attributes.push(attribute);
     }
 }
 
 /**
  * HLS segment struct.
  */
-struct Segment {}
+pub struct Segment {}
 
 impl Segment {
     pub fn new() -> Self {
@@ -138,25 +169,43 @@ impl Segment {
 }
 
 /**
+ * HLS Attribute struct.
+ */
+#[derive(Clone)]
+pub struct Attribute {
+    name: &'static str,
+    value: String,
+}
+
+impl Attribute {
+    pub fn new(name: &'static str, value: String) -> Self {
+        Self {
+            name: name,
+            value: value,
+        }
+    }
+}
+
+/**
  * HLS playlist struct.
  */
-struct Playlist {
-    absoluteUri: String,
-    playlistType: PlaylistType,
+pub struct Playlist {
+    absolute_uri: String,
+    playlist_type: PlaylistType,
     tags: Vec<Tag>,
-    segments: Vec<Segment>,
+    segments: Option<Vec<Segment>>,
 }
 
 impl Playlist {
     pub fn new(
-        absoluteUri: String,
-        playlistType: PlaylistType,
+        absolute_uri: String,
+        playlist_type: PlaylistType,
         tags: Vec<Tag>,
-        segments: Vec<Segment>,
+        segments: Option<Vec<Segment>>,
     ) -> Self {
         Self {
-            absoluteUri: absoluteUri,
-            playlistType: playlistType,
+            absolute_uri: absolute_uri,
+            playlist_type: playlist_type,
             tags: tags,
             segments: segments,
         }
@@ -201,7 +250,8 @@ const SEGMENT_TAGS: [&'static str; 6] = [
     "EXT-X-DATERANGE",
 ];
 
-enum PlaylistType {
+#[derive(Copy, Clone)]
+pub enum PlaylistType {
     Master = 0,
     Media = 1,
 }
