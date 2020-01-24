@@ -79,7 +79,8 @@ impl ManifestTextParser {
             // An EXT-X-STREAM-INF tag is followed by a URI of a media playlist.
             // Add the URI to the tag object.
             if tag.name == "EXT-X-STREAM-INF" {
-                let tag_uri = Attribute::new("URI", lines.clone()[i + 1].into());
+                let tag_uri =
+                    Attribute::new("URI".to_owned().to_string(), lines.clone()[i + 1].into());
                 tag.add_attribute(tag_uri);
                 skip = true;
             }
@@ -140,12 +141,43 @@ impl ManifestTextParser {
         //   2b. Otherwise, items are attributes.
         // 3. If there is no ":", it's a simple tag with no attributes and no value.
 
-        // let tag: &str = line[line.find("#").unwrap() + 1..].into();
-        // let name: &str = tag[..tag.find(":").unwrap()].into();
-        // let data: &str = tag[tag.find(":").unwrap() + 1..].into();
-
-        // if data.len() > 0 {}
-        Tag::new("name".to_owned())
+        if line.starts_with("#") {
+            // Remove #
+            let (_, right) = line.split_at(1);
+            // parts = [tag_name, attribute_str]
+            let parts: Vec<&str> = right.split(":").collect();
+            if parts.len() == 2 {
+                let subparts: Vec<&str> = parts.get(1).unwrap().split(",").collect();
+                let mut value = None;
+                let mut attributes = None;
+                // TODO: Check the HLS spec for treat the optional title on tags
+                if (subparts.len() == 1 && !subparts.get(0).unwrap().contains("="))
+                    || subparts.get(1).unwrap().contains("")
+                {
+                    value = Some(subparts.get(0).unwrap().to_owned().to_string());
+                } else {
+                    attributes = Some(
+                        subparts
+                            .into_iter()
+                            .map(|subpart| {
+                                let subsubpart: Vec<&str> = subpart.split("=").collect();
+                                Attribute::new(
+                                    subsubpart.get(0).unwrap().to_owned().to_string(),
+                                    subsubpart.get(1).unwrap().to_owned().to_string(),
+                                )
+                            })
+                            .rev()
+                            .collect(),
+                    );
+                }
+                return Tag::new(
+                    parts.get(0).unwrap().to_owned().to_string(),
+                    value,
+                    attributes,
+                );
+            }
+        }
+        Tag::new(line.to_owned(), None, None)
     }
 
     /**
@@ -169,11 +201,11 @@ impl ManifestTextParser {
     /**
      * Resolves an array of relative URIs to the given base URIs. This will result
      * in M*N number of URIs.
+     * TODO: Big jobs to do here -> see goo.uri
      */
     fn resolve_uris(base_uris: Vec<String>, relative_uris: Vec<String>) -> Vec<String> {
-        // const Functional = shaka.util.Functional;
-        // if (relativeUris.length == 0) {
-        // return baseUris;
+        // if relative_uris.is_empty() {
+        //     base_uris
         // }
 
         // const relativeAsGoog = relativeUris.map((uri) => new goog.Uri(uri));
@@ -183,7 +215,10 @@ impl ManifestTextParser {
         //     .map((base) => relativeAsGoog.map((i) => base.resolve(i)))
         //     .reduce(Functional.collapseArrays, [])
         //     .map((uri) => uri.toString());
-        Vec::new()
+        let mut vector = Vec::new();
+        vector.push("yolo".to_owned());
+        vector.push("yoo".to_owned());
+        vector
     }
 }
 
@@ -193,14 +228,16 @@ impl ManifestTextParser {
 #[derive(Clone)]
 pub struct Tag {
     name: String,
+    value: String,
     attributes: Vec<Attribute>,
 }
 
 impl Tag {
-    pub fn new(name: String) -> Self {
+    pub fn new(name: String, value: Option<String>, attributes: Option<Vec<Attribute>>) -> Self {
         Self {
             name: name,
-            attributes: Vec::new(),
+            value: value.unwrap_or_default(),
+            attributes: attributes.unwrap_or_default(),
         }
     }
 
@@ -231,12 +268,12 @@ impl Segment {
  */
 #[derive(Clone)]
 pub struct Attribute {
-    name: &'static str,
+    name: String,
     value: String,
 }
 
 impl Attribute {
-    pub fn new(name: &'static str, value: String) -> Self {
+    pub fn new(name: String, value: String) -> Self {
         Self {
             name: name,
             value: value,
