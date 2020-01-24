@@ -91,12 +91,39 @@ impl ManifestTextParser {
     }
 
     /**
-     * Matches a string to an HLS comment format and returns the result.
+     * Parses an array of strings into an array of HLS Segment objects.
      */
-    fn is_comment(line: &str) -> bool {
-        let reg_comment = Regex::new("^#").unwrap();
+    fn parse_segments(
+        absolute_playlist_uri: String,
+        lines: Vec<&str>,
+        mut playlist_tags: Vec<Tag>,
+    ) -> Vec<Segment> {
+        let mut segments: Vec<Segment> = Vec::new();
+        let mut segments_tags: Vec<Tag> = Vec::new();
+
         let reg_ext = Regex::new("^#EXT").unwrap();
-        reg_comment.is_match(line) && !reg_ext.is_match(line)
+        for line in lines {
+            if reg_ext.is_match(line) {
+                let tag = Self::parse_tag(line);
+                if MEDIA_PLAYLIST_TAGS.iter().any(|t| t == &tag.name) {
+                    playlist_tags.push(tag);
+                } else {
+                    segments_tags.push(tag);
+                }
+            } else if Self::is_comment(line) {
+                // Skip comments.
+                continue;
+            } else {
+                let verbatim_segment_uri = line.trim();
+                let absolute_segment_uri = Self::construct_absolute_uri(
+                    absolute_playlist_uri.clone(),
+                    verbatim_segment_uri.to_owned(),
+                );
+                let segment = Segment::new(absolute_segment_uri, segments_tags.clone());
+                segments.push(segment);
+            }
+        }
+        segments
     }
 
     /**
@@ -122,16 +149,41 @@ impl ManifestTextParser {
     }
 
     /**
-     * Parses an array of strings into an array of HLS Segment objects.
+     * Matches a string to an HLS comment format and returns the result.
      */
-    fn parse_segments(
-        absolute_media_playlist_uri: String,
-        lines: Vec<&str>,
-        playlist_tags: Vec<Tag>,
-    ) -> Vec<Segment> {
-        let mut segments: Vec<Segment> = Vec::new();
-        segments.push(Segment::new());
-        segments
+    fn is_comment(line: &str) -> bool {
+        let reg_comment = Regex::new("^#").unwrap();
+        let reg_ext = Regex::new("^#EXT").unwrap();
+        reg_comment.is_match(line) && !reg_ext.is_match(line)
+    }
+
+    fn construct_absolute_uri(parent_absolute_uri: String, uri: String) -> String {
+        let mut parent_absolute_uri_vec = Vec::new();
+        parent_absolute_uri_vec.push(parent_absolute_uri);
+        let mut uri_vec = Vec::new();
+        uri_vec.push(uri);
+
+        Self::resolve_uris(parent_absolute_uri_vec, uri_vec).remove(0)
+    }
+
+    /**
+     * Resolves an array of relative URIs to the given base URIs. This will result
+     * in M*N number of URIs.
+     */
+    fn resolve_uris(base_uris: Vec<String>, relative_uris: Vec<String>) -> Vec<String> {
+        // const Functional = shaka.util.Functional;
+        // if (relativeUris.length == 0) {
+        // return baseUris;
+        // }
+
+        // const relativeAsGoog = relativeUris.map((uri) => new goog.Uri(uri));
+        // // Resolve each URI relative to each base URI, creating an Array of Arrays.
+        // // Then flatten the Arrays into a single Array.
+        // return baseUris.map((uri) => new goog.Uri(uri))
+        //     .map((base) => relativeAsGoog.map((i) => base.resolve(i)))
+        //     .reduce(Functional.collapseArrays, [])
+        //     .map((uri) => uri.toString());
+        Vec::new()
     }
 }
 
@@ -160,11 +212,17 @@ impl Tag {
 /**
  * HLS segment struct.
  */
-pub struct Segment {}
+pub struct Segment {
+    absolute_uri: String,
+    tags: Vec<Tag>,
+}
 
 impl Segment {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(absolute_uri: String, tags: Vec<Tag>) -> Self {
+        Self {
+            absolute_uri: absolute_uri,
+            tags: tags,
+        }
     }
 }
 
