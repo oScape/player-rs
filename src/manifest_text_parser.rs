@@ -1,4 +1,11 @@
+use crate::hls_structs::*;
 use regex::Regex;
+
+/**
+ * TODO in this file:
+ * - Check the HLS spec for treat the optional title on tags
+ * - Big jobs to do here -> see goo.uri
+ */
 
 pub struct ManifestTextParser {}
 
@@ -55,7 +62,7 @@ impl ManifestTextParser {
 
             let mut tag = Self::parse_tag(line);
 
-            if MEDIA_PLAYLIST_TAGS.iter().any(|t| t == &tag.name) {
+            if SEGMENT_TAGS.iter().any(|t| t == &tag.name) {
                 // Only media playlists should contain segment tags
                 match playlist_type {
                     PlaylistType::Media => {
@@ -223,102 +230,6 @@ impl ManifestTextParser {
 }
 
 /**
- * HLS tag struct.
- */
-#[derive(Clone)]
-pub struct Tag {
-    name: String,
-    value: String,
-    attributes: Vec<Attribute>,
-}
-
-impl Tag {
-    pub fn new(name: String, value: Option<String>, attributes: Option<Vec<Attribute>>) -> Self {
-        Self {
-            name: name,
-            value: value.unwrap_or_default(),
-            attributes: attributes.unwrap_or_default(),
-        }
-    }
-
-    pub fn add_attribute(&mut self, attribute: Attribute) {
-        self.attributes.push(attribute);
-    }
-}
-
-/**
- * HLS segment struct.
- */
-pub struct Segment {
-    absolute_uri: String,
-    tags: Vec<Tag>,
-}
-
-impl Segment {
-    pub fn new(absolute_uri: String, tags: Vec<Tag>) -> Self {
-        Self {
-            absolute_uri: absolute_uri,
-            tags: tags,
-        }
-    }
-}
-
-/**
- * HLS Attribute struct.
- */
-#[derive(Clone)]
-pub struct Attribute {
-    name: String,
-    value: String,
-}
-
-impl Attribute {
-    pub fn new(name: String, value: String) -> Self {
-        Self {
-            name: name,
-            value: value,
-        }
-    }
-}
-
-/**
- * HLS playlist struct.
- */
-pub struct Playlist {
-    absolute_uri: String,
-    playlist_type: PlaylistType,
-    tags: Vec<Tag>,
-    segments: Option<Vec<Segment>>,
-}
-
-impl Playlist {
-    pub fn new(
-        absolute_uri: String,
-        playlist_type: PlaylistType,
-        tags: Vec<Tag>,
-        segments: Option<Vec<Segment>>,
-    ) -> Self {
-        Self {
-            absolute_uri: absolute_uri,
-            playlist_type: playlist_type,
-            tags: tags,
-            segments: segments,
-        }
-    }
-}
-
-/**
- * Reads elements from strings.
- */
-struct TextParser {}
-
-impl TextParser {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
-/**
  * HLS tags that only appear on Media Playlists.
  * Used to determine a playlist type.
  */
@@ -344,9 +255,3 @@ const SEGMENT_TAGS: [&'static str; 6] = [
     "EXT-X-KEY",
     "EXT-X-DATERANGE",
 ];
-
-#[derive(Copy, Clone)]
-pub enum PlaylistType {
-    Master = 0,
-    Media = 1,
-}

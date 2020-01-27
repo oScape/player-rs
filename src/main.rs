@@ -1,3 +1,4 @@
+mod hls_structs;
 mod manifest_text_parser;
 
 fn main() {
